@@ -1,27 +1,11 @@
 type OpenAIChatCompletionResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | null;
-    };
-  }>;
-  error?: {
-    message?: string;
-    type?: string;
-    code?: string | null;
-  };
+  choices?: Array<{ message?: { content?: string | null } }>;
+  error?: { message?: string; type?: string; code?: string | null };
 };
 
 type GeminiGenerateContentResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string }>;
-    };
-  }>;
-  error?: {
-    message?: string;
-    status?: string;
-    code?: number;
-  };
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  error?: { message?: string; status?: string; code?: number };
 };
 
 type AnthropicMessagesResponse = {
@@ -51,7 +35,7 @@ export type AnalyzeOptions = {
   /**
    * Override provider selection.
    */
-  provider?: "openai-compatible" | "gemini" | "anthropic";
+  provider?: LlmProvider;
 };
 
 export type LlmProvider = "openai-compatible" | "gemini" | "anthropic";
@@ -59,6 +43,32 @@ export type LlmProvider = "openai-compatible" | "gemini" | "anthropic";
 type LlmClient = {
   analyze(prompt: string, options?: AnalyzeOptions): Promise<string>;
 };
+
+type HttpResult = { res: Response; text: string };
+
+export class LlmApiError extends Error {
+  readonly provider: LlmProvider;
+  readonly status: number | undefined;
+  readonly retryAfterMs: number | undefined;
+  readonly details: string | undefined;
+
+  constructor(args: {
+    provider: LlmProvider;
+    message: string;
+    status?: number;
+    retryAfterMs?: number;
+    details?: string;
+    cause?: unknown;
+  }) {
+    super(args.message);
+    this.name = "LlmApiError";
+    this.provider = args.provider;
+    this.status = args.status;
+    this.retryAfterMs = args.retryAfterMs;
+    this.details = args.details;
+    if (args.cause !== undefined) (this as { cause?: unknown }).cause = args.cause;
+  }
+}
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -85,6 +95,55 @@ function isLocalhostBaseUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+function safeJsonParse<T>(text: string): T | undefined {
+  try {
+    return text ? (JSON.parse(text) as T) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseRetryAfterMs(res: Response): number | undefined {
+  const ra = res.headers.get("retry-after");
+  if (!ra) return undefined;
+  const seconds = Number(ra);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds) * 1000;
+  const dateMs = Date.parse(ra);
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  return undefined;
+}
+
+async function fetchTextWithTimeout(
+  input: string | URL,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<HttpResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(input, { ...init, signal: controller.signal });
+    const text = await res.text();
+    return { res, text };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function toTimeoutError(provider: LlmProvider, timeoutMs: number, cause: unknown): LlmApiError {
+  return new LlmApiError({
+    provider,
+    message: `LLM request timed out after ${timeoutMs}ms.`,
+    cause
+  });
+}
+
+function missingKeyError(provider: LlmProvider, hint: string): LlmApiError {
+  return new LlmApiError({
+    provider,
+    message: `Missing API key. ${hint}`
+  });
 }
 
 function withFormatRules(task: string): string {
@@ -164,16 +223,10 @@ export async function analyze(prompt: string, options: AnalyzeOptions = {}): Pro
     (getEnvFirst("PRLENS_LLM_PROVIDER") as LlmProvider | undefined) ??
     "openai-compatible";
 
-  const client: LlmClient =
-    provider === "openai-compatible"
-      ? new OpenAICompatibleClient()
-      : provider === "gemini"
-        ? new GeminiClient()
-        : provider === "anthropic"
-          ? new AnthropicClient()
-        : (() => {
-            throw new Error(`Unsupported LLM provider: ${provider}`);
-          })();
+  const client = PROVIDERS[provider];
+  if (!client) {
+    throw new LlmApiError({ provider, message: `Unsupported LLM provider: ${provider}` });
+  }
   return client.analyze(prompt, options);
 }
 
@@ -202,62 +255,61 @@ class OpenAICompatibleClient implements LlmClient {
   }
 
   async analyze(prompt: string, options: AnalyzeOptions = {}): Promise<string> {
+    const provider: LlmProvider = "openai-compatible";
     const baseUrl = normalizeBaseUrl(options.baseUrl ?? this.defaultBaseUrl());
     const model = options.model ?? this.defaultModel();
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs();
     const apiKey = this.resolveApiKey(baseUrl, options.apiKey);
     if (!apiKey) {
-      throw new Error(
-        "Missing API key. Set PRLENS_LLM_API_KEY (preferred) or OPENAI_API_KEY, or use a localhost base URL."
+      throw missingKeyError(
+        provider,
+        "Set PRLENS_LLM_API_KEY (preferred) or OPENAI_API_KEY, or use a localhost base URL."
       );
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
+      const { res, text } = await fetchTextWithTimeout(
+        `${baseUrl}/v1/chat/completions`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            messages: [{ role: "user", content: prompt }]
+          })
         },
-        body: JSON.stringify({
-          model,
-          temperature: 0.2,
-          messages: [{ role: "user", content: prompt }]
-        }),
-        signal: controller.signal
-      });
+        timeoutMs
+      );
 
-      const text = await res.text();
-      let data: OpenAIChatCompletionResponse | undefined;
-      try {
-        data = text ? (JSON.parse(text) as OpenAIChatCompletionResponse) : undefined;
-      } catch {
-        // ignore JSON parse failures; handle below
-      }
-
+      const data = safeJsonParse<OpenAIChatCompletionResponse>(text);
       if (!res.ok) {
-        const msg =
-          data?.error?.message ??
-          (text ? text.slice(0, 500) : undefined) ??
-          `Request failed with status ${res.status}`;
-        throw new Error(`LLM API error (${res.status}): ${msg}`);
+        const retryAfterMs = parseRetryAfterMs(res);
+        throw new LlmApiError({
+          provider,
+          status: res.status,
+          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+          message: `LLM API error (${res.status}): ${data?.error?.message ?? (text ? text.slice(0, 500) : "Request failed")}`,
+          ...(text ? { details: text } : {})
+        });
       }
 
       const content = data?.choices?.[0]?.message?.content ?? "";
       const trimmed = content.trim();
-      if (!trimmed) throw new Error("LLM returned an empty response.");
+      if (!trimmed) {
+        throw new LlmApiError({ provider, status: res.status, message: "LLM returned an empty response." });
+      }
       return trimmed;
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error(`LLM request timed out after ${timeoutMs}ms.`);
+      if (err instanceof DOMException && err.name === "AbortError") throw toTimeoutError(provider, timeoutMs, err);
+      if (err instanceof LlmApiError) throw err;
+      if (err instanceof Error) {
+        throw new LlmApiError({ provider, message: err.message, cause: err });
       }
-      if (err instanceof Error) throw err;
-      throw new Error(String(err));
-    } finally {
-      clearTimeout(timeout);
+      throw new LlmApiError({ provider, message: String(err) });
     }
   }
 }
@@ -290,6 +342,7 @@ class GeminiClient implements LlmClient {
   }
 
   async analyze(prompt: string, options: AnalyzeOptions = {}): Promise<string> {
+    const provider: LlmProvider = "gemini";
     const baseUrl = normalizeBaseUrl(options.baseUrl ?? this.defaultBaseUrl());
     const apiVersion = this.defaultApiVersion();
     const model = options.model
@@ -300,61 +353,51 @@ class GeminiClient implements LlmClient {
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs();
     const apiKey = this.resolveApiKey(options.apiKey);
     if (!apiKey) {
-      throw new Error("Missing API key. Set PRLENS_LLM_API_KEY (preferred) or GEMINI_API_KEY.");
+      throw missingKeyError(provider, "Set PRLENS_LLM_API_KEY (preferred) or GEMINI_API_KEY.");
     }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const url = new URL(`${baseUrl}/${apiVersion}/${model}:generateContent`);
       url.searchParams.set("key", apiKey);
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.2
-          }
-        }),
-        signal: controller.signal
-      });
+      const { res, text } = await fetchTextWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2 }
+          })
+        },
+        timeoutMs
+      );
 
-      const text = await res.text();
-      let data: GeminiGenerateContentResponse | undefined;
-      try {
-        data = text ? (JSON.parse(text) as GeminiGenerateContentResponse) : undefined;
-      } catch {
-        // ignore JSON parse failures; handle below
-      }
-
+      const data = safeJsonParse<GeminiGenerateContentResponse>(text);
       if (!res.ok) {
-        const msg =
-          data?.error?.message ??
-          (text ? text.slice(0, 500) : undefined) ??
-          `Request failed with status ${res.status}`;
-        throw new Error(`LLM API error (${res.status}): ${msg}`);
+        const retryAfterMs = parseRetryAfterMs(res);
+        throw new LlmApiError({
+          provider,
+          status: res.status,
+          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+          message: `LLM API error (${res.status}): ${data?.error?.message ?? (text ? text.slice(0, 500) : "Request failed")}`,
+          ...(text ? { details: text } : {})
+        });
       }
 
       const parts = data?.candidates?.[0]?.content?.parts ?? [];
       const content = parts.map((p) => p.text ?? "").join("").trim();
-      if (!content) throw new Error("LLM returned an empty response.");
+      if (!content) {
+        throw new LlmApiError({ provider, status: res.status, message: "LLM returned an empty response." });
+      }
       return content;
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error(`LLM request timed out after ${timeoutMs}ms.`);
+      if (err instanceof DOMException && err.name === "AbortError") throw toTimeoutError(provider, timeoutMs, err);
+      if (err instanceof LlmApiError) throw err;
+      if (err instanceof Error) {
+        throw new LlmApiError({ provider, message: err.message, cause: err });
       }
-      if (err instanceof Error) throw err;
-      throw new Error(String(err));
-    } finally {
-      clearTimeout(timeout);
+      throw new LlmApiError({ provider, message: String(err) });
     }
   }
 }
@@ -380,48 +423,45 @@ class AnthropicClient implements LlmClient {
   }
 
   async analyze(prompt: string, options: AnalyzeOptions = {}): Promise<string> {
+    const provider: LlmProvider = "anthropic";
     const baseUrl = normalizeBaseUrl(options.baseUrl ?? this.defaultBaseUrl());
     const model = options.model ?? this.defaultModel();
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs();
     const apiKey = this.resolveApiKey(options.apiKey);
     if (!apiKey) {
-      throw new Error("Missing API key. Set PRLENS_LLM_API_KEY (preferred) or ANTHROPIC_API_KEY.");
+      throw missingKeyError(provider, "Set PRLENS_LLM_API_KEY (preferred) or ANTHROPIC_API_KEY.");
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
     try {
-      const res = await fetch(`${baseUrl}/v1/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": getEnvFirst("ANTHROPIC_VERSION") ?? "2023-06-01"
+      const { res, text } = await fetchTextWithTimeout(
+        `${baseUrl}/v1/messages`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": getEnvFirst("ANTHROPIC_VERSION") ?? "2023-06-01"
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 800,
+            temperature: 0.2,
+            messages: [{ role: "user", content: prompt }]
+          })
         },
-        body: JSON.stringify({
-          model,
-          max_tokens: 800,
-          temperature: 0.2,
-          messages: [{ role: "user", content: prompt }]
-        }),
-        signal: controller.signal
-      });
+        timeoutMs
+      );
 
-      const text = await res.text();
-      let data: AnthropicMessagesResponse | undefined;
-      try {
-        data = text ? (JSON.parse(text) as AnthropicMessagesResponse) : undefined;
-      } catch {
-        // ignore JSON parse failures; handle below
-      }
-
+      const data = safeJsonParse<AnthropicMessagesResponse>(text);
       if (!res.ok) {
-        const msg =
-          data?.error?.message ??
-          (text ? text.slice(0, 500) : undefined) ??
-          `Request failed with status ${res.status}`;
-        throw new Error(`LLM API error (${res.status}): ${msg}`);
+        const retryAfterMs = parseRetryAfterMs(res);
+        throw new LlmApiError({
+          provider,
+          status: res.status,
+          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+          message: `LLM API error (${res.status}): ${data?.error?.message ?? (text ? text.slice(0, 500) : "Request failed")}`,
+          ...(text ? { details: text } : {})
+        });
       }
 
       const content = (data?.content ?? [])
@@ -429,17 +469,24 @@ class AnthropicClient implements LlmClient {
         .map((p) => p.text ?? "")
         .join("")
         .trim();
-      if (!content) throw new Error("LLM returned an empty response.");
+      if (!content) {
+        throw new LlmApiError({ provider, status: res.status, message: "LLM returned an empty response." });
+      }
       return content;
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error(`LLM request timed out after ${timeoutMs}ms.`);
+      if (err instanceof DOMException && err.name === "AbortError") throw toTimeoutError(provider, timeoutMs, err);
+      if (err instanceof LlmApiError) throw err;
+      if (err instanceof Error) {
+        throw new LlmApiError({ provider, message: err.message, cause: err });
       }
-      if (err instanceof Error) throw err;
-      throw new Error(String(err));
-    } finally {
-      clearTimeout(timeout);
+      throw new LlmApiError({ provider, message: String(err) });
     }
   }
 }
+
+const PROVIDERS: Record<LlmProvider, LlmClient> = {
+  "openai-compatible": new OpenAICompatibleClient(),
+  gemini: new GeminiClient(),
+  anthropic: new AnthropicClient()
+};
 
