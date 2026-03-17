@@ -1,3 +1,5 @@
+import { focusDirectiveForPrompt } from "../config/prlensConfig.js";
+
 type OpenAIChatCompletionResponse = {
   choices?: Array<{ message?: { content?: string | null } }>;
   error?: { message?: string; type?: string; code?: string | null };
@@ -162,9 +164,12 @@ function withFormatRules(task: string): string {
 }
 
 export function buildPRReviewPrompt(diff: string): string {
+  const focusLine = focusDirectiveForPrompt(
+    "Focus on correctness, security, performance, and maintainability."
+  );
   return withFormatRules([
     "Review the following pull request diff.",
-    "Focus on correctness, security, performance, and maintainability.",
+    focusLine,
     "If something is unknown from the diff, state assumptions briefly.",
     "",
     "Diff:",
@@ -175,9 +180,12 @@ export function buildPRReviewPrompt(diff: string): string {
 }
 
 export function buildFileReviewPrompt(code: string): string {
+  const focusLine = focusDirectiveForPrompt(
+    "Focus on correctness, security, readability, and edge cases."
+  );
   return withFormatRules([
     "Review the following code file.",
-    "Focus on correctness, security, readability, and edge cases.",
+    focusLine,
     "",
     "Code:",
     "```",
@@ -187,8 +195,12 @@ export function buildFileReviewPrompt(code: string): string {
 }
 
 export function buildRepoQueryPrompt(context: string, question: string): string {
+  const focusLine = focusDirectiveForPrompt(
+    "Prioritize correctness and clarity, and keep the answer focused on what the context supports."
+  );
   return withFormatRules([
     "Answer the question using only the provided repository context.",
+    focusLine,
     "If context is insufficient, say what's missing and propose next steps.",
     "",
     "Context:",

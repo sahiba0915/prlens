@@ -1,6 +1,7 @@
 import { analyze, LlmApiError } from "./ai.service.js";
 import { buildRepoContext, type RepoContextOptions } from "../utils/repoContext.js";
 import { ReviewError } from "./reviewErrors.js";
+import { focusDirectiveForPrompt } from "../config/prlensConfig.js";
 
 export type AskOptions = {
   context?: RepoContextOptions;
@@ -19,10 +20,14 @@ function sleep(ms: number): Promise<void> {
 
 function buildAskPrompt(context: string, question: string, includedFiles: string[]): string {
   const fileList = includedFiles.length ? includedFiles.map((f) => `- ${f}`).join("\n") : "(none)";
+  const focusLine = focusDirectiveForPrompt(
+    "Prioritize correctness and helpfulness, and keep the answer concise."
+  );
   return [
     "You are a senior software engineer.",
     "Answer the user's question using only the provided repository context.",
     "Be concise and direct.",
+    focusLine,
     "When you make a claim tied to code, cite the relevant file path(s) from the included files list.",
     "If context is insufficient, say what's missing and which files would likely contain it.",
     "",
