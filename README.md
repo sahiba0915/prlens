@@ -41,6 +41,89 @@ prlens ask "Where is config loaded?"
 prlens version
 ```
 
+## How to use
+
+### Install (pick one)
+
+#### No install (recommended to try it)
+
+```bash
+npx -y prlens --help
+```
+
+#### Global
+
+```bash
+npm i -g prlens
+prlens --help
+```
+
+#### Project-local
+
+```bash
+npm i -D prlens
+npx prlens --help
+```
+
+### Set env (required for AI)
+
+Pick one LLM provider and set its key (details are in this README under **LLM Provider**). Example (OpenAI-compatible):
+
+```bash
+export PRLENS_LLM_PROVIDER=openai-compatible
+export PRLENS_LLM_BASE_URL=https://api.openai.com
+export PRLENS_LLM_API_KEY=...
+export PRLENS_LLM_MODEL=gpt-4o-mini
+```
+
+If they want `prlens pr`, also set:
+
+```bash
+export PRLENS_GITHUB_TOKEN=...
+```
+
+### Run commands
+
+#### Review a file
+
+```bash
+prlens review README.md
+```
+
+#### Review a GitHub PR
+
+```bash
+prlens pr 123 --repo vercel/next.js
+```
+
+#### Review local branch changes vs upstream
+
+```bash
+prlens changes
+```
+
+#### Ask a question about the repo
+
+```bash
+prlens ask "Where is config loaded?"
+```
+
+#### Print version
+
+```bash
+prlens version
+```
+
+### Optional: run before every push
+
+Inside a git repo:
+
+```bash
+prlens install
+```
+
+That installs a `pre-push` hook that runs `prlens changes` before pushing.
+
 ## Commands
 
 ### `prlens review <file>`
