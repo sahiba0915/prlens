@@ -2,12 +2,14 @@
 import { Command } from "commander";
 import { createRequire } from "node:module";
 import { loadEnv } from "./config/env.js";
+import { loadConfig } from "./config/prlensConfig.js";
 import { registerAskCommand } from "./commands/ask.js";
 import { registerPrCommand } from "./commands/pr.js";
 import { registerReviewCommand } from "./commands/review.js";
 import { logger } from "./utils/logger.js";
 
 loadEnv();
+await loadConfig();
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { version?: string };
