@@ -11,40 +11,30 @@ It minimizes diffs (keeps only changed lines) to reduce tokens and keep reviews 
 
 ## Install
 
-PRLens is not published to npm yet in this repo. To use it, clone the repo and run it locally.
+### From npm (recommended)
 
 ```bash
-npm install
-npm run build
-node dist/index.js --help
+npm i -g prlens
+prlens --help
 ```
 
-Optional (for a `prlens` command in your shell while developing):
+Or run without installing globally:
 
 ```bash
-npm link
-prlens --help
+npx prlens --help
 ```
 
 ## Quick start
 
 ```bash
-node dist/index.js review README.md
-node dist/index.js pr 123 --repo vercel/next.js
-node dist/index.js changes
-node dist/index.js ask "Where is config loaded?"
-node dist/index.js version
+prlens review README.md
+prlens pr 123 --repo vercel/next.js
+prlens changes
+prlens ask "Where is config loaded?"
+prlens version
 ```
 
 ## How to use
-
-### Install (dev / from this repo)
-
-```bash
-npm install
-npm run build
-node dist/index.js --help
-```
 
 ### Set env (required for AI)
 
@@ -57,7 +47,7 @@ export PRLENS_LLM_API_KEY=...
 export PRLENS_LLM_MODEL=gpt-4o-mini
 ```
 
-If they want `prlens pr`, also set:
+If you want `prlens pr`, also set:
 
 ```bash
 export PRLENS_GITHUB_TOKEN=...
@@ -68,31 +58,31 @@ export PRLENS_GITHUB_TOKEN=...
 #### Review a file
 
 ```bash
-node dist/index.js review README.md
+prlens review README.md
 ```
 
 #### Review a GitHub PR
 
 ```bash
-node dist/index.js pr 123 --repo vercel/next.js
+prlens pr 123 --repo vercel/next.js
 ```
 
 #### Review local branch changes vs upstream
 
 ```bash
-node dist/index.js changes
+prlens changes
 ```
 
 #### Ask a question about the repo
 
 ```bash
-node dist/index.js ask "Where is config loaded?"
+prlens ask "Where is config loaded?"
 ```
 
 #### Print version
 
 ```bash
-node dist/index.js version
+prlens version
 ```
 
 ### Optional: run before every push
@@ -100,7 +90,7 @@ node dist/index.js version
 Inside a git repo:
 
 ```bash
-node dist/index.js install
+prlens install
 ```
 
 That installs a `pre-push` hook that runs `prlens changes` before pushing.
@@ -112,8 +102,8 @@ That installs a `pre-push` hook that runs `prlens changes` before pushing.
 Review a local file and print a structured report.
 
 ```bash
-node dist/index.js review src/index.ts
-node dist/index.js review src/index.ts --max-chars 8000
+prlens review src/index.ts
+prlens review src/index.ts --max-chars 8000
 ```
 
 ### `pr <number> --repo <owner/repo>`
@@ -121,8 +111,8 @@ node dist/index.js review src/index.ts --max-chars 8000
 Fetch the PR diff from GitHub, minimize it, then generate a structured AI review.
 
 ```bash
-node dist/index.js pr 123 --repo vercel/next.js
-node dist/index.js pr 123 --repo owner/repo --max-chars 8000
+prlens pr 123 --repo vercel/next.js
+prlens pr 123 --repo owner/repo --max-chars 8000
 ```
 
 ### `changes`
@@ -138,8 +128,8 @@ git diff --unified=0 @{u}...HEAD
 Examples:
 
 ```bash
-node dist/index.js changes
-node dist/index.js changes --max-chars 8000
+prlens changes
+prlens changes --max-chars 8000
 ```
 
 If you don’t have an upstream branch set, configure one (example):
@@ -153,8 +143,8 @@ git branch --set-upstream-to origin/main
 Ask a question about your local codebase (PRLens scans a limited subset of files for context).
 
 ```bash
-node dist/index.js ask "How does auth work?"
-node dist/index.js ask "Where is the database client created?"
+prlens ask "How does auth work?"
+prlens ask "Where is the database client created?"
 ```
 
 ### `install` (optional)
@@ -162,8 +152,8 @@ node dist/index.js ask "Where is the database client created?"
 Installs a git `pre-push` hook that runs `prlens changes` before pushing.
 
 ```bash
-node dist/index.js install
-node dist/index.js install --force
+prlens install
+prlens install --force
 ```
 
 This writes `.git/hooks/pre-push` to run:
@@ -213,12 +203,25 @@ export PRLENS_LLM_API_KEY=...
 export PRLENS_LLM_MODEL=claude-3-5-sonnet-latest
 ```
 
+## Privacy & security notes
+
+- PRLens sends the content it is reviewing (files/diffs and related context) to the configured LLM provider.
+- **Do not** run it on proprietary code if you’re not allowed to share that code with your chosen provider.
+- API keys/tokens are read from environment variables (for example `PRLENS_LLM_API_KEY`, `PRLENS_GITHUB_TOKEN`). Don’t commit them to git.
+
 ## Development (this repo)
 
 ```bash
 npm install
 npm run build
 node dist/index.js --help
+```
+
+Optional (for a `prlens` command in your shell while developing):
+
+```bash
+npm link
+prlens --help
 ```
 
 ## Requirements
