@@ -1,15 +1,15 @@
 {
-  "name": "gitferret",
+  "name": "gitreviewpilot",
   "version": "0.1.0",
-  "description": "Gitferret - AI-powered CLI tool for reviewing pull requests and understanding codebases.",
+  "description": "GitReviewPilot — AI-powered CLI for reviewing pull requests and understanding codebases.",
   "type": "module",
   "license": "MIT",
   "bin": {
-    "gitferret": "dist/index.js"
+    "gitreviewpilot": "dist/index.js"
   },
   "files": [
     "dist/",
-    "gitferret.config.json",
+    "gitreviewpilot.config.json",
     "README.md",
     "LICENSE"
   ],

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { logger } from "../utils/logger.js";
 
-export type GitferretConfig = {
+export type GitReviewPilotConfig = {
   /**
    * High-level areas to prioritize in AI output.
    * Treated as an ordered list (earlier = higher priority).
@@ -10,7 +10,7 @@ export type GitferretConfig = {
   focus: string[];
 };
 
-export const DEFAULT_GITFERRET_CONFIG: GitferretConfig = {
+export const DEFAULT_GITREVIEWPILOT_CONFIG: GitReviewPilotConfig = {
   focus: ["correctness", "security", "performance", "maintainability"]
 };
 
@@ -32,46 +32,46 @@ function normalizeStringArray(value: unknown): string[] | undefined {
   return out;
 }
 
-function parseConfigJson(jsonText: string): GitferretConfig | undefined {
+function parseConfigJson(jsonText: string): GitReviewPilotConfig | undefined {
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
   } catch (err: unknown) {
-    logger.warn(`Invalid gitferret.config.json (failed to parse JSON): ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`Invalid gitreviewpilot.config.json (failed to parse JSON): ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
   }
 
   if (!isObject(parsed)) {
-    logger.warn("Invalid gitferret.config.json (expected a JSON object).");
+    logger.warn("Invalid gitreviewpilot.config.json (expected a JSON object).");
     return undefined;
   }
 
-  const focus = normalizeStringArray(parsed.focus) ?? DEFAULT_GITFERRET_CONFIG.focus;
-  return { ...DEFAULT_GITFERRET_CONFIG, focus };
+  const focus = normalizeStringArray(parsed.focus) ?? DEFAULT_GITREVIEWPILOT_CONFIG.focus;
+  return { ...DEFAULT_GITREVIEWPILOT_CONFIG, focus };
 }
 
-let cachedConfig: GitferretConfig | undefined;
+let cachedConfig: GitReviewPilotConfig | undefined;
 
-export async function loadConfig(cwd: string = process.cwd()): Promise<GitferretConfig> {
+export async function loadConfig(cwd: string = process.cwd()): Promise<GitReviewPilotConfig> {
   if (cachedConfig) return cachedConfig;
-  const configPath = path.join(cwd, "gitferret.config.json");
+  const configPath = path.join(cwd, "gitreviewpilot.config.json");
 
   try {
     const text = await readFile(configPath, "utf8");
     const parsed = parseConfigJson(text);
-    cachedConfig = parsed ?? DEFAULT_GITFERRET_CONFIG;
+    cachedConfig = parsed ?? DEFAULT_GITREVIEWPILOT_CONFIG;
     logger.debug(`config loaded: ${configPath}`);
     return cachedConfig;
   } catch (err: unknown) {
     // Missing config file is normal; default config should apply silently.
     if (err instanceof Error && "code" in err && (err as { code?: string }).code === "ENOENT") {
-      cachedConfig = DEFAULT_GITFERRET_CONFIG;
+      cachedConfig = DEFAULT_GITREVIEWPILOT_CONFIG;
       logger.debug(`config not found, using defaults: ${configPath}`);
       return cachedConfig;
     }
-    cachedConfig = DEFAULT_GITFERRET_CONFIG;
+    cachedConfig = DEFAULT_GITREVIEWPILOT_CONFIG;
     logger.warn(
-      `Failed to load gitferret.config.json, using defaults: ${err instanceof Error ? err.message : String(err)}`
+      `Failed to load gitreviewpilot.config.json, using defaults: ${err instanceof Error ? err.message : String(err)}`
     );
     return cachedConfig;
   }
@@ -81,8 +81,8 @@ export async function loadConfig(cwd: string = process.cwd()): Promise<Gitferret
  * Returns the cached config if already loaded, otherwise returns defaults.
  * Prefer calling `loadConfig()` during app startup to avoid I/O mid-command.
  */
-export function getConfig(): GitferretConfig {
-  return cachedConfig ?? DEFAULT_GITFERRET_CONFIG;
+export function getConfig(): GitReviewPilotConfig {
+  return cachedConfig ?? DEFAULT_GITREVIEWPILOT_CONFIG;
 }
 
 export function focusDirectiveForPrompt(defaultFocusText: string): string {
