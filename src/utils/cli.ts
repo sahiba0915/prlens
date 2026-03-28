@@ -49,7 +49,7 @@ export function formatUserFacingError(err: unknown): { title: string; hint?: str
     // InvalidArgumentError extends CommanderError but is handled separately below.
     const hint =
       err.code === "commander.unknownCommand"
-        ? "Run `gitferret --help` to see available commands."
+        ? "Run `gitreviewpilot --help` to see available commands."
         : err.code === "commander.unknownOption"
           ? "Run with `--help` to see valid options."
           : err.code === "commander.missingMandatoryOptionValue" || err.code === "commander.optionMissingArgument"
@@ -83,11 +83,11 @@ export function formatUserFacingError(err: unknown): { title: string; hint?: str
   if (err instanceof PrReviewError) {
     const hint =
       err.code === "GITHUB_AUTH_MISSING"
-        ? "Set `GITFERRET_GITHUB_TOKEN` (recommended) or `GITHUB_TOKEN`."
+        ? "Set `GITREVIEWPILOT_GITHUB_TOKEN` (recommended) or `GITHUB_TOKEN`."
         : err.code === "INVALID_REPO"
           ? "Example: `--repo vercel/next.js`"
           : err.code === "INVALID_PR_NUMBER"
-            ? "Example: `gitferret pr 123 --repo owner/repo`"
+            ? "Example: `gitreviewpilot pr 123 --repo owner/repo`"
             : undefined;
     return {
       title: err.message,
@@ -121,7 +121,7 @@ export function printUserFacingError(err: unknown): void {
   // Keep output compact and friendly (similar to popular CLIs).
   console.error(chalk.red("Error:"), title);
   if (hint) console.error(chalk.dim("Hint:"), hint);
-  if (process.env.GITFERRET_LOG_LEVEL === "debug" && details) {
+  if (process.env.GITREVIEWPILOT_LOG_LEVEL === "debug" && details) {
     console.error(chalk.dim(details));
   }
 }
